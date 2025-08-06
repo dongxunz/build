@@ -1,0 +1,78 @@
+name: Build Armbian
+
+on:
+  workflow_dispatch:
+    inputs:
+      board:
+        description: 'Target board (e.g. orangepizero, rockpi-4b)'
+        required: true
+        default: orangepizero
+      kernel_branch:
+        description: 'Kernel branch (current/legacy)'
+        required: true
+        default: current
+      release:
+        description: 'OS release (bullseye/jammy/focal)'
+        required: true
+        default: jammy
+      desktop:
+        description: 'Desktop environment (yes/no)'
+        required: true
+        default: "no"
+      minimal:
+        description: 'Minimal build (yes/no)'
+        required: true
+        default: "yes"
+
+jobs:
+  build-armbian:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240  # 编译可能耗时较长（通常2-4小时）
+
+    steps:
+    - name: Checkout Armbian Build
+      uses: actions/checkout@v4
+      with:
+        repository: https://github.com/armbian/build
+        path: build
+
+    - name: Set up Build Environment
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -qq -y \
+          git wget curl pv bc binfmt-support qemu-user-static \
+          zip unzip lbzip2 dosfstools parted gdisk tree \
+          bison flex make libc6-dev libssl-dev \
+          crossbuild-essential-arm64 crossbuild-essential-armhf
+        
+    - name: Configure Build Parameters
+      shell: bash
+      run: |
+        echo "BOARD=${{ github.event.inputs.board }}" >> $GITHUB_ENV
+        echo "BRANCH=${{ github.event.inputs.kernel_branch }}" >> $GITHUB_ENV
+        echo "RELEASE=${{ github.event.inputs.release }}" >> $GITHUB_ENV
+        echo "BUILD_DESKTOP=${{ github.event.inputs.desktop }}" >> $GITHUB_ENV
+        echo "BUILD_MINIMAL=${{ github.event.inputs.minimal }}" >> $GITHUB_ENV
+        echo "KERNEL_ONLY=no" >> $GITHUB_ENV
+        echo "KERNEL_CONFIGURE=no" >> $GITHUB_ENV
+        echo "CLEAN_LEVEL=make,debs" >> $GITHUB_ENV
+
+    - name: Start Build Process
+      working-directory: ./build
+      run: |
+        ./compile.sh \
+          BOARD=${BOARD} \
+          BRANCH=${BRANCH} \
+          RELEASE=${RELEASE} \
+          BUILD_DESKTOP=${BUILD_DESKTOP} \
+          BUILD_MINIMAL=${BUILD_MINIMAL} \
+          KERNEL_ONLY=${KERNEL_ONLY} \
+          KERNEL_CONFIGURE=${KERNEL_CONFIGURE} \
+          CLEAN_LEVEL=${CLEAN_LEVEL}
+          
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: armbian-images
+        path: build/output/images/*.img
+        retention-days: 7
